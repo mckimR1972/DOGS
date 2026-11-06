@@ -1,0 +1,43 @@
+# Build outputs and caches (all modules)
+.gradle/
+.kotlin/
+build/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+/captures/
+
+# Local IDE / machine settings
+.idea/
+*.iml
+local.properties
+.DS_Store
+
+# Firebase app config: obtain separately from the team project
+# This is not an admin key; it is excluded as the team's config distribution policy.
+google-services.json
+
+# Credentials / signing (never put admin credentials in the Android app)
+.env
+.env.*
+!.env.example
+!.env.*.example
+key.properties
+keystore.properties
+*.jks
+*.keystore
+*.p12
+*.pfx
+*service-account*.json
+*serviceAccount*.json
+*firebase-adminsdk*.json
+
+# Local Firebase / test output
+.firebase/
+*-debug.log
+*-debug.*.log
+*.hprof
+
+# Local-only Git setup guide
+/GITHUB_SETUP.md

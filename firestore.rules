@@ -1,0 +1,156 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function memberAfter(gid) {
+      return signedIn() && existsAfter(/databases/$(database)/documents/groups/$(gid)/members/$(request.auth.uid));
+    }
+    function member(gid) {
+      return signedIn() && exists(/databases/$(database)/documents/groups/$(gid)/members/$(request.auth.uid));
+    }
+    function leader(gid) {
+      return member(gid) && get(/databases/$(database)/documents/groups/$(gid)).data.leader_id == request.auth.uid;
+    }
+    function leaderAfter(gid) {
+      return memberAfter(gid) && getAfter(/databases/$(database)/documents/groups/$(gid)).data.leader_id == request.auth.uid;
+    }
+    function text(value, max) { return value is string && value.size() > 0 && value.size() <= max; }
+    function optionalDog(gid, id) {
+      return id == null || (id is string && existsAfter(/databases/$(database)/documents/groups/$(gid)/dogs/$(id)));
+    }
+    match /users/{uid} {
+      function validUser() {
+        let d = request.resource.data;
+        return d.keys().hasOnly(['id','email','name','profile_img','active_group_id','schema_version'])
+          && d.keys().hasAll(['id','email','name','profile_img','active_group_id','schema_version'])
+          && d.id == uid && d.schema_version == 2 && text(d.name,20)
+          && d.email is string && d.email.size() <= 320 && d.profile_img is string && d.profile_img.size() <= 2048
+          && (d.active_group_id == null || (d.active_group_id is string && memberAfter(d.active_group_id)));
+      }
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn() && request.auth.uid == uid && validUser();
+      allow list, delete: if false;
+      match /notifications/{nid} {
+        // Trusted server will create notifications. Client may only mark its own notification read.
+        allow read: if signedIn() && request.auth.uid == uid;
+        allow update: if signedIn() && request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_read'])
+          && request.resource.data.is_read is bool;
+        allow create, delete: if false;
+      }
+    }
+    match /groups/{gid} {
+      function validGroup() {
+        let d = request.resource.data;
+        return d.keys().hasOnly(['id','name','leader_id','invite_code','timezone','created_at'])
+          && d.keys().hasAll(['id','name','leader_id','invite_code','timezone','created_at'])
+          && d.id == gid && text(d.name,30) && d.leader_id is string
+          && d.invite_code == null && d.timezone == 'Asia/Seoul' && d.created_at is timestamp;
+      }
+      allow read: if member(gid);
+      allow create: if signedIn() && validGroup() && request.resource.data.leader_id == request.auth.uid
+        && request.resource.data.created_at == request.time
+        && getAfter(/databases/$(database)/documents/groups/$(gid)/members/$(request.auth.uid)).data.role == 'leader'
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.active_group_id == gid;
+      allow update: if leader(gid) && validGroup()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name']);
+      // Invitations, leadership transfer and group deletion require a trusted workflow, not arbitrary client writes.
+      allow delete: if false;
+      match /members/{uid} {
+        allow read: if member(gid);
+        allow create: if signedIn() && request.auth.uid == uid
+          && !exists(/databases/$(database)/documents/groups/$(gid))
+          && getAfter(/databases/$(database)/documents/groups/$(gid)).data.leader_id == uid
+          && request.resource.data.keys().hasOnly(['group_id','user_id','role','joined_at'])
+          && request.resource.data.keys().hasAll(['group_id','user_id','role','joined_at'])
+          && request.resource.data.group_id == gid && request.resource.data.user_id == uid
+          && request.resource.data.role == 'leader' && request.resource.data.joined_at == request.time;
+        allow update, delete: if false;
+      }
+      match /dogs/{did} {
+        function validDog() {
+          let d = request.resource.data;
+          return d.keys().hasOnly(['id','group_id','name','breed','birth','weight','photo'])
+            && d.keys().hasAll(['id','group_id','name','breed','birth','weight','photo'])
+            && d.id == did && d.group_id == gid && text(d.name,20)
+            && d.breed is string && d.breed.size() <= 60
+            && (d.birth == null || (d.birth is string && d.birth.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')))
+            && (d.weight == null || (d.weight is number && d.weight > 0 && d.weight <= 200))
+            && d.photo is string && d.photo.size() <= 2048;
+        }
+        allow read: if member(gid);
+        allow create, update: if memberAfter(gid) && validDog();
+        // Dog deletion policy and referenced todos/photos must be agreed before enabling it.
+        allow delete: if false;
+      }
+      match /todos/{tid} {
+        function validTodo() {
+          let d = request.resource.data;
+          let r = d.repeat_rule;
+          return d.keys().hasOnly(['id','group_id','dog_id','title','repeat_rule','due_at','created_by','note'])
+            && d.keys().hasAll(['id','group_id','dog_id','title','repeat_rule','due_at','created_by','note'])
+            && d.id == tid && d.group_id == gid && optionalDog(gid,d.dog_id) && text(d.title,100)
+            && d.created_by is string && d.note is string && d.note.size() <= 1000
+            && d.due_at is string && d.due_at.matches('([01][0-9]|2[0-3]):[0-5][0-9]')
+            && r is map && r.keys().hasOnly(['frequency','weekdays']) && r.keys().hasAll(['frequency','weekdays'])
+            && r.weekdays is list && r.weekdays.size() <= 7 && r.weekdays.toSet().size() == r.weekdays.size()
+            && r.weekdays.hasOnly([1,2,3,4,5,6,7])
+            && ((r.frequency == 'daily' && r.weekdays.size() == 0) || (r.frequency == 'weekly' && r.weekdays.size() > 0));
+        }
+        allow read: if member(gid);
+        allow create: if leaderAfter(gid) && validTodo() && request.resource.data.created_by == request.auth.uid;
+        allow update: if leader(gid) && validTodo() && request.resource.data.created_by == resource.data.created_by;
+        allow delete: if leader(gid);
+      }
+      match /todoLogs/{lid} {
+        allow read: if member(gid);
+        allow create: if member(gid)
+          && request.resource.data.keys().hasOnly(['id','todo_id','done_by','done_at','occurrence_day'])
+          && request.resource.data.keys().hasAll(['id','todo_id','done_by','done_at','occurrence_day'])
+          && request.resource.data.id == lid && request.resource.data.todo_id is string
+          && request.resource.data.done_by == request.auth.uid && request.resource.data.done_at == request.time
+          && request.resource.data.occurrence_day is string
+          && request.resource.data.occurrence_day.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+          && lid == request.resource.data.todo_id + '_' + request.resource.data.occurrence_day
+          && exists(/databases/$(database)/documents/groups/$(gid)/todos/$(request.resource.data.todo_id));
+        allow update: if false;
+        allow delete: if member(gid) && (resource.data.done_by == request.auth.uid || leader(gid));
+      }
+      match /changeRequests/{cid} {
+        // Only proposal creation is client-owned. Approval and ToDo mutation belong to a future Function.
+        allow read: if member(gid);
+        allow create: if member(gid)
+          && request.resource.data.keys().hasOnly(['id','todo_id','proposer_id','payload','status'])
+          && request.resource.data.keys().hasAll(['id','todo_id','proposer_id','payload','status'])
+          && request.resource.data.id == cid && request.resource.data.proposer_id == request.auth.uid
+          && request.resource.data.status == 'pending' && request.resource.data.todo_id is string
+          && exists(/databases/$(database)/documents/groups/$(gid)/todos/$(request.resource.data.todo_id))
+          && request.resource.data.payload is map
+          && request.resource.data.payload.keys().hasOnly(['title','due_at','dog_id','repeat_rule','note'])
+          && request.resource.data.payload.size() > 0;
+        allow update, delete: if false;
+      }
+      match /requests/{rid} {
+        allow read: if member(gid);
+        allow create: if member(gid)
+          && request.resource.data.keys().hasOnly(['id','group_id','from_user_id','to_user_id','content','status'])
+          && request.resource.data.keys().hasAll(['id','group_id','from_user_id','to_user_id','content','status'])
+          && request.resource.data.id == rid && request.resource.data.group_id == gid
+          && request.resource.data.from_user_id == request.auth.uid
+          && request.resource.data.to_user_id is string
+          && exists(/databases/$(database)/documents/groups/$(gid)/members/$(request.resource.data.to_user_id))
+          && text(request.resource.data.content,1000) && request.resource.data.status == 'pending';
+        allow update: if member(gid) && resource.data.to_user_id == request.auth.uid && resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          && request.resource.data.status in ['accepted','rejected'];
+        allow delete: if false;
+      }
+      match /photos/{pid} {
+        allow read: if member(gid);
+        // Storage upload/cleanup not connected yet; fail closed instead of publishing arbitrary URLs.
+        allow write: if false;
+      }
+    }
+
+  }
+}
