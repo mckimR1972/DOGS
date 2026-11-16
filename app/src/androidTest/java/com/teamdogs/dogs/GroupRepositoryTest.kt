@@ -86,6 +86,26 @@ class GroupRepositoryTest {
         repo.deleteTodo(group.group.id,"common")
         assertEquals(1,repo.load()!!.todos.size)
     }
+    @Test fun optionalTimeAndCareHistoryRoundTrip() = runBlocking {
+        val (user,_,repo)=client();val g=repo.saveSetup(seed())
+        repo.saveTodo(Todo("untimed",g.group.id,null,"빗질",RepeatRule(),"",user.uid))
+        assertEquals("",repo.load()!!.todos.first {it.id=="untimed"}.due_at)
+        repo.setCompleted(g.group.id,"untimed",g.day,true)
+        repo.saveTodo(Todo("untimed",g.group.id,null,"바뀐 제목",RepeatRule(),"",user.uid))
+        assertEquals("빗질",repo.careHistory(g.group.id,g.day,g.group.timezone).single().title)
+        repo.deleteTodo(g.group.id,"untimed")
+        assertEquals("빗질",repo.careHistory(g.group.id,g.day,g.group.timezone).single().title)
+        val yesterday=java.time.LocalDate.parse(g.day).minusDays(1)
+        val instant=yesterday.atTime(12,30).atZone(java.time.ZoneId.of(g.group.timezone)).toInstant()
+        val record=CareRecord("manual",g.group.id,"간식 줬어요",g.dogs.first().id,user.uid,com.google.firebase.Timestamp(java.util.Date.from(instant)))
+        repo.saveCareRecord(record);repo.saveCareRecord(record)
+        val history=repo.careHistory(g.group.id,yesterday.toString(),g.group.timezone)
+        assertEquals(1,history.size);assertNull(history.single().todoId)
+        assertEquals(record.done_at,history.single().performedAt)
+        assertEquals(1,repo.careHistory(g.group.id,g.day,g.group.timezone).size)
+        repo.deleteCareRecord(g.group.id,record.id)
+        assertTrue(repo.careHistory(g.group.id,yesterday.toString(),g.group.timezone).isEmpty())
+    }
     @Test fun outsiderCannotReadOrReplaceMembership() = runBlocking {
         val (_,_,repo)=client(); val g=repo.saveSetup(seed()); val (other,db,_)=client()
         assertTrue(runCatching { Tasks.await(db.document("groups/${g.group.id}").get(Source.SERVER),10,TimeUnit.SECONDS) }.isFailure)

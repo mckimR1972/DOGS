@@ -13,6 +13,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.teamdogs.dogs.auth.SignedInUser
 import com.teamdogs.dogs.prototype.*
+import com.teamdogs.dogs.photos.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,9 +55,9 @@ class GroupViewModel(private val repository: GroupRepository) : ViewModel() {
     fun add(title: String, time: String, petId: String): Boolean {
         val snapshot = mutable.value.snapshot ?: return false
         if (mutable.value.busy || snapshot.group.leader_id != snapshot.user.id || title.isBlank() ||
-            !Regex("([01][0-9]|2[0-3]):[0-5][0-9]").matches(time)) return false
+            !validOptionalTime(time.trim())) return false
         val todo = Todo(UUID.randomUUID().toString(), snapshot.group.id, petId.ifBlank { null }, title.trim(),
-            RepeatRule(), time, snapshot.user.id)
+            RepeatRule(), time.trim(), snapshot.user.id)
         run { repository.saveTodo(todo); repository.load() }
         return true
     }
@@ -126,13 +127,19 @@ fun GroupApp(account: SignedInUser, notificationsEnabled: Boolean, onRequestNoti
                     if (log == null) todo.note else "${if (log.done_by == account.uid) snapshot.user.name else log.done_by.take(6)} · 완료 기록됨", log != null)
             }, photos = localPhotos.filter { photo -> snapshot.dogs.any { it.id == photo.petId } }, day = snapshot.day))
     }
+    val photoModel = rememberPhotoModel(account.uid, snapshot.group.id)
     var editingDog by remember { mutableStateOf<Dog?>(null) }
     Column(Modifier.fillMaxSize()) {
         if (ui.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         ui.error?.let { Text(it, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.error) }
         PrototypeApp(accountKey, false, account.name, notificationsEnabled, onRequestNotifications, onTestNotification,
             onExit, controller, cloudGroup = snapshot, onToggleTask = model::toggle, onCreateTask = model::add,
-            onRefresh = model::refresh, onEditDog = { id -> editingDog = snapshot.dogs.find { it.id == id } }, cloudBusy = ui.busy)
+            onRefresh = model::refresh, onEditDog = { id -> editingDog = snapshot.dogs.find { it.id == id } }, cloudBusy = ui.busy,
+            albumContent = { PhotoAlbum(photoModel, snapshot) },
+            recentPhotosContent = { selected, open -> RecentPhotos(photoModel, snapshot, selected.ifBlank { null }, open) },
+            careHistoryContent = { selected, compact ->
+                CareHistorySection(account, snapshot, selected, compact, model::refresh)
+            })
     }
     editingDog?.let { dog -> DogDialog(dog, onDismiss = { editingDog = null }, onSave = { model.saveDog(it); editingDog = null }) }
 }

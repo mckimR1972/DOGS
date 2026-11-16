@@ -20,6 +20,9 @@ interface GroupRepository {
     suspend fun saveDog(dog: Dog)
     suspend fun saveTodo(todo: Todo)
     suspend fun deleteTodo(groupId: String, todoId: String)
+    suspend fun careHistory(groupId: String, day: String, timezone: String): List<CareHistoryItem>
+    suspend fun saveCareRecord(record: CareRecord)
+    suspend fun deleteCareRecord(groupId: String, id: String)
     suspend fun setCompleted(groupId: String, todoId: String, day: String, completed: Boolean)
 }
 
@@ -130,7 +133,7 @@ class FirestoreGroupRepository(private val account: SignedInUser,
 
     override suspend fun saveTodo(todo: Todo) {
         require(todo.title.isNotBlank() && todo.title.length <= 100)
-        require(Regex("([01][0-9]|2[0-3]):[0-5][0-9]").matches(todo.due_at))
+        require(validOptionalTime(todo.due_at))
         require(todo.repeat_rule.frequency in listOf("daily", "weekly"))
         require(todo.repeat_rule.weekdays.distinct().size == todo.repeat_rule.weekdays.size)
         require(todo.repeat_rule.weekdays.all { it in 1..7 })
@@ -142,13 +145,55 @@ class FirestoreGroupRepository(private val account: SignedInUser,
         groupRef(groupId).collection("todos").document(todoId).delete().awaitGroup()
     }
 
+    override suspend fun careHistory(groupId: String, day: String, timezone: String): List<CareHistoryItem> {
+        val date = java.time.LocalDate.parse(day)
+        val zone = java.time.ZoneId.of(timezone)
+        val start = com.google.firebase.Timestamp(java.util.Date.from(date.atStartOfDay(zone).toInstant()))
+        val end = com.google.firebase.Timestamp(java.util.Date.from(date.plusDays(1).atStartOfDay(zone).toInstant()))
+        val ref = groupRef(groupId)
+        val logs = ref.collection("todoLogs").whereGreaterThanOrEqualTo("done_at", start)
+            .whereLessThan("done_at", end).get(Source.SERVER).awaitGroup().toObjects(TodoLog::class.java)
+        val manual = ref.collection("careRecords").whereGreaterThanOrEqualTo("done_at", start)
+            .whereLessThan("done_at", end).get(Source.SERVER).awaitGroup().toObjects(CareRecord::class.java)
+        val oldTitles = if (logs.any { it.title.isBlank() }) ref.collection("todos").get(Source.SERVER).awaitGroup()
+            .toObjects(Todo::class.java).associateBy { it.id } else emptyMap()
+        return (logs.mapNotNull { log -> log.done_at?.let {
+            CareHistoryItem(log.id, log.title.ifBlank { oldTitles[log.todo_id]?.title ?: "완료한 돌봄" },
+                log.dog_id ?: oldTitles[log.todo_id]?.dog_id, log.done_by, it, log.occurrence_day, log.todo_id)
+        } } + manual.mapNotNull { record -> record.done_at?.let {
+            CareHistoryItem(record.id, record.title, record.dog_id, record.done_by, it, day)
+        } }).sortedByDescending { it.performedAt }
+    }
+    override suspend fun saveCareRecord(record: CareRecord) {
+        require(record.done_by == account.uid && record.title.isNotBlank() && record.title.length <= 100)
+        require(record.done_at != null && record.done_at.toDate().time <= System.currentTimeMillis())
+        val ref = groupRef(record.group_id).collection("careRecords").document(record.id)
+        db.runTransaction { tx ->
+            val old = tx.get(ref)
+            if (old.exists()) {
+                val existing = old.toObject(CareRecord::class.java)!!
+                check(existing.copy(created_at = null) == record.copy(created_at = null)) { "다른 기록 ID예요." }
+            } else tx.set(ref, mapOf("id" to record.id, "group_id" to record.group_id, "title" to record.title,
+                "dog_id" to record.dog_id, "done_by" to account.uid, "done_at" to record.done_at,
+                "created_at" to FieldValue.serverTimestamp()))
+        }.awaitGroup()
+    }
+    override suspend fun deleteCareRecord(groupId: String, id: String) {
+        groupRef(groupId).collection("careRecords").document(id).delete().awaitGroup()
+    }
+
     override suspend fun setCompleted(groupId: String, todoId: String, day: String, completed: Boolean) {
         java.time.LocalDate.parse(day)
         val ref = groupRef(groupId).collection("todoLogs").document(logId(todoId, day))
         try { db.runTransaction { tx ->
             val current = tx.get(ref)
-            if (completed && !current.exists()) tx.set(ref, mapOf("id" to ref.id, "todo_id" to todoId,
-                "done_by" to account.uid, "done_at" to FieldValue.serverTimestamp(), "occurrence_day" to day))
+            if (completed && !current.exists()) {
+                val todo = tx.get(groupRef(groupId).collection("todos").document(todoId))
+                check(todo.exists())
+                tx.set(ref, mapOf("id" to ref.id, "todo_id" to todoId,
+                    "done_by" to account.uid, "done_at" to FieldValue.serverTimestamp(), "occurrence_day" to day,
+                    "title" to todo.getString("title"), "dog_id" to todo.getString("dog_id")))
+            }
             else if (!completed && current.exists()) tx.delete(ref)
         }.awaitGroup() } catch (error: FirebaseFirestoreException) {
             if (error.code != FirebaseFirestoreException.Code.PERMISSION_DENIED) throw error

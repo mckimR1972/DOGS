@@ -72,8 +72,8 @@ class CareController(private val store: CareStore, val demo: Boolean) {
     fun toggle(id: String) = update(state.copy(tasks = state.tasks.map { if (it.id == id) it.copy(done = !it.done) else it }))
     fun answer(value: String) = update(state.copy(requestAnswer = value))
     fun addTask(title: String, time: String, petId: String): Boolean {
-        if (title.isBlank() || !Regex("([01][0-9]|2[0-3]):[0-5][0-9]").matches(time) || state.pets.none { it.id == petId }) return false
-        update(state.copy(tasks = state.tasks + CareTask(UUID.randomUUID().toString(), title.trim(), time, petId)))
+        if (title.isBlank() || !com.teamdogs.dogs.group.validOptionalTime(time.trim()) || (petId.isNotBlank() && state.pets.none { it.id == petId })) return false
+        update(state.copy(tasks = state.tasks + CareTask(UUID.randomUUID().toString(), title.trim(), time.trim(), petId)))
         return true
     }
     fun addPhoto(path: String, petId: String) {

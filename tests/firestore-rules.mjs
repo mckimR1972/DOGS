@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 const project = 'demo-dogs-onboarding';
 const root = `projects/${project}/databases/(default)/documents`;
 const url = `http://127.0.0.1:8080/v1/${root}`;
-const value = v => v === null ? {nullValue:null} : typeof v === 'string' ? {stringValue:v} :
+const value = v => v instanceof Date ? {timestampValue:v.toISOString()} : v === null ? {nullValue:null} : typeof v === 'string' ? {stringValue:v} :
   typeof v === 'boolean' ? {booleanValue:v} : typeof v === 'number' ? (Number.isInteger(v) ? {integerValue:String(v)} : {doubleValue:v}) :
   Array.isArray(v) ? {arrayValue:{values:v.map(value)}} : {mapValue:{fields:fields(v)}};
 const fields = obj => Object.fromEntries(Object.entries(obj).map(([k,v])=>[k,value(v)]));
@@ -57,7 +57,26 @@ ok(await commit('owner',[write(`users/${a.localId}/notifications/n-a`,notif,['cr
 const nd=ok(await req(`/users/${a.localId}/notifications/n-a`,a.idToken),'own notification readable');
 ok(await commit(a.idToken,[{update:{...nd,fields:{...nd.fields,is_read:{booleanValue:true}}},updateMask:{fieldPaths:['is_read']}}]),'own notification may be marked read');
 denied(await req(`/users/${a.localId}/notifications/n-a`,b.idToken),'others cannot read private notifications');
-denied(await commit(a.idToken,[write(`${base}/photos/photo-a`,{id:'photo-a',group_id:gid,dog_id:dog.id,uploader_id:a.localId,url:'https://example.com',storage_path:'x',status:'ready'},['created_at'])]),'photo publishing disabled until storage workflow exists');
+denied(await commit(a.idToken,[write(`${base}/photos/photo-a`,{id:'photo-a',group_id:gid,dog_id:dog.id,uploader_id:a.localId,url:'https://example.com',storage_path:'x',status:'ready'},['created_at'])]),'direct photo publishing blocked; callable workflow required');
+ok(await commit(a.idToken,[write(`${base}/todos/${todo.id}`,{...todo,due_at:''})]),'leader can save todo without scheduled time');
+denied(await commit(a.idToken,[write(`${base}/todos/${todo.id}`,{...todo,due_at:'24:99'})]),'invalid non-empty scheduled time rejected');
+const record={id:'care-a',group_id:gid,title:'간식 줬어요',dog_id:dog.id,done_by:b.localId,done_at:new Date(Date.now()-60000)};
+ok(await commit(b.idToken,[write(`${base}/careRecords/${record.id}`,record,['created_at'])]),'member can record already-performed care');
+ok(await req(`/${base}/careRecords/${record.id}`,a.idToken),'leader can read member care record');
+denied(await req(`/${base}/careRecords/${record.id}`,c.idToken),'outsider cannot read care record');
+denied(await commit(b.idToken,[write(`${base}/careRecords/forged`,{...record,id:'forged',done_by:a.localId},['created_at'])]),'care actor cannot be forged');
+denied(await commit(b.idToken,[write(`${base}/careRecords/future`,{...record,id:'future',done_at:new Date(Date.now()+86400000)},['created_at'])]),'future performed time rejected');
+denied(await commit(b.idToken,[write(`${base}/careRecords/wrongdog`,{...record,id:'wrongdog',dog_id:'outside-dog'},['created_at'])]),'care tag must belong to group');
+denied(await commit(c.idToken,[write(`${base}/careRecords/outside`,{...record,id:'outside',done_by:c.localId},['created_at'])]),'outsider cannot create care record');
+denied(await commit(b.idToken,[write(`${base}/careRecords/${record.id}`,{...record,title:'changed'},['created_at'])]),'record cannot be silently rewritten');
+ok(await commit(a.idToken,[write(`${base}/careRecords/leader-care`,{...record,id:'leader-care',done_by:a.localId,dog_id:null},['created_at'])]),'common care record allowed');
+denied(await commit(b.idToken,[{delete:`${root}/${base}/careRecords/leader-care`}]),'member cannot delete another persons record');
+ok(await commit(b.idToken,[{delete:`${root}/${base}/careRecords/${record.id}`}]),'member can delete own record');
+ok(await commit(a.idToken,[{delete:`${root}/${base}/careRecords/leader-care`}]),'leader can delete record');
+const snapshotLog={...log,title:todo.title,dog_id:dog.id};
+ok(await commit(b.idToken,[write(`${base}/todoLogs/${log.id}`,snapshotLog,['done_at'])]),'completion stores matching title and dog snapshot');
+ok(await commit(a.idToken,[{delete:`${root}/${base}/todoLogs/${log.id}`}]),'snapshot completion can be undone');
+denied(await commit(b.idToken,[write(`${base}/todoLogs/${log.id}`,{...snapshotLog,title:'forged'},['done_at'])]),'completion title must match todo');
 ok(await commit('owner',[{delete:`${root}/${base}/members/${b.localId}`}]),'remove fixture member');
 denied(await req('/'+base,b.idToken),'departed member immediately loses group access');
 denied(await req(`/users/${a.localId}/settings/onboarding`,a.idToken),'unlisted settings path cannot be read');

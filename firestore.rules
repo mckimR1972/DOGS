@@ -96,7 +96,7 @@ service cloud.firestore {
             && d.keys().hasAll(['id','group_id','dog_id','title','repeat_rule','due_at','created_by','note'])
             && d.id == tid && d.group_id == gid && optionalDog(gid,d.dog_id) && text(d.title,100)
             && d.created_by is string && d.note is string && d.note.size() <= 1000
-            && d.due_at is string && d.due_at.matches('([01][0-9]|2[0-3]):[0-5][0-9]')
+            && d.due_at is string && (d.due_at == '' || d.due_at.matches('([01][0-9]|2[0-3]):[0-5][0-9]'))
             && r is map && r.keys().hasOnly(['frequency','weekdays']) && r.keys().hasAll(['frequency','weekdays'])
             && r.weekdays is list && r.weekdays.size() <= 7 && r.weekdays.toSet().size() == r.weekdays.size()
             && r.weekdays.hasOnly([1,2,3,4,5,6,7])
@@ -110,14 +110,29 @@ service cloud.firestore {
       match /todoLogs/{lid} {
         allow read: if member(gid);
         allow create: if member(gid)
-          && request.resource.data.keys().hasOnly(['id','todo_id','done_by','done_at','occurrence_day'])
+          && request.resource.data.keys().hasOnly(['id','todo_id','done_by','done_at','occurrence_day','title','dog_id'])
           && request.resource.data.keys().hasAll(['id','todo_id','done_by','done_at','occurrence_day'])
           && request.resource.data.id == lid && request.resource.data.todo_id is string
           && request.resource.data.done_by == request.auth.uid && request.resource.data.done_at == request.time
           && request.resource.data.occurrence_day is string
           && request.resource.data.occurrence_day.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
           && lid == request.resource.data.todo_id + '_' + request.resource.data.occurrence_day
-          && exists(/databases/$(database)/documents/groups/$(gid)/todos/$(request.resource.data.todo_id));
+          && exists(/databases/$(database)/documents/groups/$(gid)/todos/$(request.resource.data.todo_id))
+          && (!('title' in request.resource.data) || request.resource.data.title == get(/databases/$(database)/documents/groups/$(gid)/todos/$(request.resource.data.todo_id)).data.title)
+          && (!('dog_id' in request.resource.data) || request.resource.data.dog_id == get(/databases/$(database)/documents/groups/$(gid)/todos/$(request.resource.data.todo_id)).data.dog_id);
+        allow update: if false;
+        allow delete: if member(gid) && (resource.data.done_by == request.auth.uid || leader(gid));
+      }
+      match /careRecords/{rid} {
+        allow read: if member(gid);
+        allow create: if member(gid)
+          && request.resource.data.keys().hasOnly(['id','group_id','title','dog_id','done_by','done_at','created_at'])
+          && request.resource.data.keys().hasAll(['id','group_id','title','dog_id','done_by','done_at','created_at'])
+          && request.resource.data.id == rid && request.resource.data.group_id == gid
+          && text(request.resource.data.title,100) && optionalDog(gid,request.resource.data.dog_id)
+          && request.resource.data.done_by == request.auth.uid
+          && request.resource.data.done_at is timestamp && request.resource.data.done_at <= request.time
+          && request.resource.data.created_at == request.time;
         allow update: if false;
         allow delete: if member(gid) && (resource.data.done_by == request.auth.uid || leader(gid));
       }
@@ -151,8 +166,8 @@ service cloud.firestore {
         allow delete: if false;
       }
       match /photos/{pid} {
-        allow read: if member(gid);
-        // Storage upload/cleanup not connected yet; fail closed instead of publishing arbitrary URLs.
+        allow read: if member(gid) && (resource.data.status == 'ready' || resource.data.uploader_id == request.auth.uid || leader(gid));
+        // Photo lifecycle is validated by authenticated callable functions.
         allow write: if false;
       }
     }

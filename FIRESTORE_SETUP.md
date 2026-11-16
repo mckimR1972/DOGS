@@ -7,8 +7,8 @@ DOGS는 팀에서 합의한 **그룹 기반 데이터 모델**을 사용한다. 
 - Firebase 프로젝트: `dogs-dev-f9a4e`
 - Firestore: Standard `(default)` / `asia-northeast3`(서울)
 - 인증: Firebase Authentication의 Google 로그인
-- 요금제: Spark
-- 파일 저장: 현재 기기 보관. Firebase Storage 업로드는 후속 작업
+- 요금제: Blaze
+- 파일 저장: 공용 사진첩은 Firebase Storage. 초기 반려견 프로필 사진은 기기 보관
 
 `app/google-services.json`을 준비하고 Google 로그인에 사용할 개발자별 디버그 서명 지문을 Firebase Android 앱에 등록한다. DB 구조를 수정하는 것만으로 설정 파일을 다시 다운로드할 필요는 없다.
 
@@ -27,7 +27,7 @@ groups/{groupId}/requests/{id}          돌봄 요청
 groups/{groupId}/photos/{photoId}       사진 메타데이터
 ```
 
-데이터가 없는 컬렉션은 콘솔에 표시되지 않는다. 사진 문서 쓰기, 알림 생성과 제안 승인 등은 관련 서버 기능을 구현할 때 연결한다.
+데이터가 없는 컬렉션은 콘솔에 표시되지 않는다. 사진 문서는 photos Functions가 작성한다. 알림 생성과 제안 승인은 별도 서버 기능으로 연결한다.
 
 ## 로그인과 초기 설정
 
@@ -37,7 +37,7 @@ groups/{groupId}/photos/{photoId}       사진 메타데이터
 4. 사용자·그룹·그룹장 멤버십·반려견·할 일을 하나의 트랜잭션으로 저장한다. 저장 성공 후 홈으로 이동한다.
 5. 재시도할 때 이미 생성된 그룹이 있으면 재사용한다. 서버 조회 실패를 신규 사용자로 처리하지 않는다.
 
-서버 데이터를 기준으로 새로고침과 앱 복귀 시 화면을 갱신한다. 실시간 구독은 아직 없다. 사진 파일과 경로는 기기에 보관하며 Firestore 문서에 기기 절대 경로를 저장하지 않는다.
+서버 데이터를 기준으로 새로고침과 앱 복귀 시 화면을 갱신한다. 실시간 구독은 아직 없다. 공용 사진첩은 Storage에 저장하며 Firestore에는 서버 경로만 기록한다. 초기 반려견 프로필 사진은 기기 보관이다.
 
 ## 보안 규칙
 
@@ -84,7 +84,7 @@ adb shell am instrument -w -e firestoreEmulator true -e class com.teamdogs.dogs.
 - 오프라인 조회 실패 시 오류 표시와 재시도
 - 실제 로그인 계정의 홈 복원과 사진의 기기 보관
 
-에뮬레이터에서 첫 Firestore 연결이 지연되면 오류가 표시될 수 있다. 연결 상태를 확인하고 다시 시도한다. 실제 두 번째 기기 동기화, 전체 화면 회귀, Storage·Functions·FCM 서버 연동은 별도로 확인한다.
+에뮬레이터에서 첫 Firestore 연결이 지연되면 오류가 표시될 수 있다. 연결 상태를 확인하고 다시 시도한다. 실제 두 번째 기기 동기화, 전체 화면 회귀, FCM 서버 연동은 별도로 확인한다. 사진첩 설정·배포는 PHOTO_ALBUM_DESIGN.md를 참고한다.
 
 ## 검증 결과 (2026-11-06)
 
@@ -148,3 +148,16 @@ SDK 테스트는 별도 이름의 `demo-dogs-onboarding` FirebaseApp만 사용�
 ## 인증 웹페이지
 
 2026-11-16 DOGS 디자인의 이메일 인증·비밀번호 재설정 페이지를 Firebase Hosting에 게시했다. Action URL 변경은 Firebase의 `EMAIL_TEMPLATE_UPDATE_NOT_ALLOWED` 응답으로 적용되지 않아 기존 메일 링크가 유지된다. 배포 주소·테스트·지원 요청 초안은 [auth-web/README.md](auth-web/README.md)를 참고한다.
+
+## 공용 사진첩 서버
+
+사진첩의 함수·Storage 규칙·인덱스는 [PHOTO_ALBUM_DESIGN.md](PHOTO_ALBUM_DESIGN.md)에 정리했다.
+`firebase deploy --non-interactive`는 Storage 규칙의 Firestore 서비스 연결 권한 설정을 건너뛸 수 있다.
+이 프로젝트에서는 담당자 승인 후 `service-821741695648@gcp-sa-firebasestorage.iam.gserviceaccount.com`에 `roles/firebaserules.firestoreServiceAgent` 역할을 부여했다. 다른 Firebase 프로젝트에 배포할 때는 해당 프로젝트의 서비스 연결 권한도 확인한다.
+배포와 실제 앱 검증 상태는 [PROTOTYPE_TESTING.md](PROTOTYPE_TESTING.md)를 따른다.
+
+## 선택 시간과 직접 돌봄 기록
+
+할 일의 due_at 빈 문자열은 시간 미정이다. 이미 한 일은 groups/{groupId}/careRecords/{recordId}에 저장한다.
+done_at은 실제 수행 시각, created_at은 서버 작성 시각이다. 그룹 멤버만 본인 이름으로 과거/현재 기록을 만들 수 있고 작성자 또는 그룹장만 삭제할 수 있다.
+기존 todoLogs와 careRecords는 화면에서 합쳐서 실제 시각순으로 표시한다. 기존 데이터 이전은 필요 없다. 관련 규칙을 게시하고 실제 앱 저장·조회·삭제를 확인했다.

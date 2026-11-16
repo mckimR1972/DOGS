@@ -7,9 +7,9 @@
 - 사용자·그룹·멤버·반려견·할 일·완료 기록을 각각 문서로 저장한다. 반려견과 돌봄 데이터는 그룹에 속한다.
 - 사용자 프로필은 본인만 읽는다. 그룹 데이터는 현재 멤버만 읽고, ToDo 생성·수정·삭제는 그룹장만 가능하다.
 - 정확한 경로·필드·권한·구현 범위는 [GROUP_SCHEMA.md](GROUP_SCHEMA.md)에 정의한다.
-- 사진 저장은 Firebase Storage를 사용할 계획이다. 업로드는 아직 연결하지 않았으며 현재 사진은 기기에 보관한다. Supabase는 도입하지 않는다.
-- 사진 조회·업로드는 그룹 멤버, 삭제는 해당 그룹의 업로더 또는 그룹장에게 허용하는 정책으로 구현한다.
-- 현재 Spark 요금제다. Storage·Functions 도입 시 요금제와 비용을 팀에서 결정한다.
+- 공용 사진첩은 Firebase Storage와 photos 코드베이스의 Cloud Functions를 사용한다. 반려견 프로필 사진은 아직 기기 전용이다. Supabase는 도입하지 않는다.
+- 사진 조회·업로드는 현재 그룹 멤버, 삭제는 현재 그룹에 속한 업로더 또는 그룹장만 가능하다. 태그는 선택 1개이며 미선택은 공통이다.
+- 현재 Blaze 요금제다. Storage·Functions 도입 시 사용량과 비용을 확인한다. 사진첩 후속 설계는 [PHOTO_ALBUM_DESIGN.md](PHOTO_ALBUM_DESIGN.md)를 참고한다.
 - 앱 로직 담당: 인증·사진·FCM 수신·알림함·Repository·ViewModel.
 - 서버/DB 담당: Firestore 스키마·보안 규칙·Functions 승인/알림 처리.
 - 프론트엔드 담당: Compose 화면·Navigation.
@@ -18,3 +18,5 @@
 - 같은 Firebase DB는 Git 브랜치별로 분리되지 않는다. 코드 push만으로 규칙이나 Functions가 배포되지 않는다.
 
 실행·검증 절차는 [FIRESTORE_SETUP.md](FIRESTORE_SETUP.md)를 참고한다.
+
+- 예정 시간 `due_at`은 빈 문자열(시간 미정)을 허용한다. `careRecords`는 멤버가 직접 남긴 완료 사건이며 반복 Todo를 만들지 않는다. 화면은 기존 `todoLogs`와 이를 합쳐 돌봄 기록으로 표시한다. 직접 기록은 본인만 작성하고 작성자/그룹장만 삭제한다.

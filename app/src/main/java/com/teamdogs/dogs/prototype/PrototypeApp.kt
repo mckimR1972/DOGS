@@ -47,6 +47,9 @@ fun PrototypeApp(
     cloudGroup: GroupSnapshot? = null, onToggleTask: ((String) -> Unit)? = null,
     onCreateTask: ((String, String, String) -> Boolean)? = null, onRefresh: (() -> Unit)? = null,
     onEditDog: ((String) -> Unit)? = null, cloudBusy: Boolean = false,
+    albumContent: (@Composable () -> Unit)? = null,
+    recentPhotosContent: (@Composable (String, () -> Unit) -> Unit)? = null,
+    careHistoryContent: (@Composable (String, Boolean) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val controller = remember(accountKey) { suppliedController ?: CareController(LocalCareStore(context, accountKey), demo) }
@@ -84,7 +87,7 @@ fun PrototypeApp(
         }
     }
     BackHandler(tab != 0) { tab = 0 }
-    val tasks = state.tasks.filter { selectedPet.isEmpty() || it.petId == selectedPet }.sortedBy { it.time }
+    val tasks = state.tasks.filter { selectedPet.isEmpty() || it.petId == selectedPet }.sortedWith(compareBy<CareTask> { it.time.isBlank() }.thenBy { it.time })
     val photos = state.photos.filter { selectedPet.isEmpty() || it.petId == selectedPet }
     Scaffold(
         bottomBar = {
@@ -101,13 +104,13 @@ fun PrototypeApp(
                 verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(state.groupName, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
-                    Text(if (demo) "샘플 체험 · 이 기기에만 저장" else if (cloudGroup != null) "그룹 저장 · 사진은 기기 보관" else if (cloudSetup) "초기 설정 저장됨 · 일상 기록은 기기 보관" else "임시 화면 · 이 기기에만 저장",
+                    Text(if (demo) "샘플 체험 · 이 기기에만 저장" else if (cloudGroup != null) "가족과 함께하는 돌봄" else if (cloudSetup) "초기 설정 저장됨 · 일상 기록은 기기 보관" else "임시 화면 · 이 기기에만 저장",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 onRefresh?.let { TextButton(onClick = it, enabled = !cloudBusy) { Text("새로고침") } }
                 TextButton(onClick = onTestNotification) { Text("알림") }
             }
-            if (tab != 3) PetFilters(state.pets, selectedPet) { selectedPet = it }
+            if (tab != 3 && !(tab == 2 && albumContent != null)) PetFilters(state.pets, selectedPet) { selectedPet = it }
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 when (tab) {
@@ -120,7 +123,7 @@ fun PrototypeApp(
                         Timeline(tasks)
                         val next = tasks.firstOrNull { !it.done }
                         if (next != null) Panel {
-                            Text("${next.time} 예정", color = MaterialTheme.colorScheme.primary,
+                            Text(if (next.time.isBlank()) "시간 미정" else "${next.time} 예정", color = MaterialTheme.colorScheme.primary,
                                 style = MaterialTheme.typography.labelMedium)
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
@@ -148,15 +151,18 @@ fun PrototypeApp(
                             }
                         }
                         if (state.requestAnswer.isNotBlank()) Text(state.requestAnswer, color = MaterialTheme.colorScheme.primary)
-                        Text("완료 ${tasks.count { it.done }}", fontWeight = FontWeight.Bold)
+                        if (careHistoryContent != null) careHistoryContent(selectedPet, true) else {
+                        Text("돌봄 기록 ${tasks.count { it.done }}", fontWeight = FontWeight.Bold)
                         tasks.filter { it.done }.forEach { task ->
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("✓ ${task.title}", style = MaterialTheme.typography.bodyMedium)
-                                Text(task.time, style = MaterialTheme.typography.labelMedium)
+                                Text(task.time.ifBlank { "시간 미정" }, style = MaterialTheme.typography.labelMedium)
                             }
                         }
+                        }
                         SectionTitle("최근 사진", "사진첩 ›") { tab = 2 }
-                        PhotoGrid(photos.take(3), state.pets, demo, onClick = { detailPhoto = it })
+                        if (recentPhotosContent != null) recentPhotosContent(selectedPet) { tab = 2 }
+                        else PhotoGrid(photos.take(3), state.pets, demo, onClick = { detailPhoto = it })
                         HorizontalDivider()
                         Text("오늘의 돌봄 팁", fontWeight = FontWeight.Bold)
                         Text("완료한 돌봄은 바로 체크해 주세요. 가족이 같은 일을 두 번 하지 않도록 도와줘요.",
@@ -169,17 +175,26 @@ fun PrototypeApp(
                         }
                         Text("${tasks.count { it.done }} / ${tasks.size} 완료", color = MaterialTheme.colorScheme.primary)
                         if (tasks.isEmpty()) Panel { Text("등록된 할 일이 없어요. + 추가로 첫 돌봄을 만들어 보세요.") }
-                        tasks.forEach { task -> Panel { TaskRow(task, state.pets, toggleTask) } }
+                        val remaining = if (careHistoryContent != null) tasks.filterNot { it.done } else tasks
+                        remaining.filter { it.time.isNotBlank() }.forEach { task -> Panel { TaskRow(task, state.pets, toggleTask) } }
+                        if (remaining.any { it.time.isBlank() }) Text("시간 미정",fontWeight=FontWeight.SemiBold)
+                        remaining.filter { it.time.isBlank() }.forEach { task -> Panel { TaskRow(task, state.pets, toggleTask) } }
+                        if (careHistoryContent != null) {
+                            HorizontalDivider()
+                            careHistoryContent(selectedPet, false)
+                        }
                         Text(if (cloudGroup != null) "완료 기록은 날짜별로 그룹에 저장돼요. 다른 사람의 변경은 새로고침으로 확인하세요." else "임시 일정은 매일 같은 목록으로 표시돼요. 날짜가 바뀌면 완료 표시가 초기화됩니다.",
                             style = MaterialTheme.typography.bodySmall)
                     }
                     2 -> {
+                        if (albumContent != null) albumContent() else {
                         SectionTitle("우리의 사진첩", if (importing) "가져오는 중" else "+ 사진") {
                             if (!importing) picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                         }
                         Text("선택한 사진은 이 기기에만 저장돼요. 전체 필터에서는 첫 번째 강아지의 사진으로 추가돼요.",
                             style = MaterialTheme.typography.bodySmall)
                         PhotoGrid(photos, state.pets, demo, onClick = { detailPhoto = it })
+                        }
                     }
                     3 -> {
                         Text("함께 돌봐요", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
@@ -252,7 +267,7 @@ fun PrototypeApp(
 }
 @Composable private fun TaskRow(task: CareTask, pets: List<Pet>, toggle: (String) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(task.time, style = MaterialTheme.typography.labelMedium)
+        Text(task.time.ifBlank { "시간 미정" }, style = MaterialTheme.typography.labelMedium)
         Column(Modifier.weight(1f)) {
             Text(task.title, fontWeight = FontWeight.SemiBold)
             Text(pets.firstOrNull { it.id == task.petId }?.name.orEmpty(), style = MaterialTheme.typography.labelSmall)
@@ -266,7 +281,7 @@ fun PrototypeApp(
     Column {
         Canvas(Modifier.fillMaxWidth().height(26.dp)) {
             drawLine(outline, Offset(0f, size.height / 2), Offset(size.width, size.height / 2), 2.dp.toPx())
-            tasks.forEach { task ->
+            tasks.filter { it.time.isNotBlank() }.forEach { task ->
                 val parts = task.time.split(":")
                 val hour = parts[0].toFloat() + parts[1].toFloat() / 60
                 val center = Offset(((hour - 6) / 18).coerceIn(.02f, .98f) * size.width, size.height / 2)
@@ -331,14 +346,15 @@ fun PrototypeApp(
     AlertDialog(onDismissRequest = onDismiss, title = { Text("할 일 추가") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedTextField(title, { title = it.take(40) }, label = { Text("할 일 이름") }, singleLine = true)
-            OutlinedTextField(time, { time = it.take(5) }, label = { Text("시간 (예: 19:30)") }, singleLine = true)
+            OutlinedTextField(time, { time = it.take(5) }, label = { Text("예정 시간 (선택, 예: 19:30)") }, singleLine = true)
+            Text("매일 반복되는 할 일이에요. 이미 한 돌봄은 아래 돌봄 기록에 남겨 주세요.",style=MaterialTheme.typography.bodySmall)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 RadioButton(petId.isBlank(), { petId = "" }); Text("그룹 공통")
             }
             pets.forEach { pet -> Row(verticalAlignment = Alignment.CenterVertically) {
                 RadioButton(petId == pet.id, { petId = pet.id }); Text(pet.name)
             } }
-            if (error) Text("이름과 올바른 시간(HH:mm)을 입력해 주세요.", color = MaterialTheme.colorScheme.error)
+            if (error) Text("이름을 입력하고, 시간을 정할 때는 HH:mm으로 입력해 주세요.", color = MaterialTheme.colorScheme.error)
         }
     }, confirmButton = { TextButton(onClick = { if (onAdd(title, time, petId)) onDismiss() else error = true }) { Text("추가") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } })

@@ -1,6 +1,7 @@
 {
   "firestore": {
-    "rules": "firestore.rules"
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
   },
   "emulators": {
     "auth": {
@@ -12,7 +13,13 @@
     "ui": {
       "enabled": false
     },
-    "singleProjectMode": true
+    "singleProjectMode": true,
+    "storage": {
+      "port": 9199
+    },
+    "functions": {
+      "port": 5001
+    }
   },
   "hosting": {
     "site": "dogs-dev-f9a4e-auth",
@@ -59,5 +66,20 @@
         ]
       }
     ]
-  }
+  },
+  "storage": {
+    "rules": "storage.rules"
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "photos",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "*-debug.log",
+        "test"
+      ]
+    }
+  ]
 }
