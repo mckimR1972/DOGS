@@ -56,6 +56,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refreshNotificationStatus()
+        if (::authViewModel.isInitialized) authViewModel.checkVerification(automatic = true)
     }
 
     private fun refreshNotificationStatus() {
@@ -103,7 +104,7 @@ class MainActivity : ComponentActivity() {
             DOGSTheme {
                 var preview by rememberSaveable { mutableStateOf(BuildConfig.DEBUG && intent.getBooleanExtra("preview", false)) }
                 val user = authViewModel.state.user
-                if (preview || user != null) {
+                if (preview || (user != null && !authViewModel.state.isLoading && !authViewModel.state.signupComplete)) {
                     val accountKey = if (preview) "demo" else "user_${user!!.uid}"
                     key(accountKey) {
                         if (preview) PrototypeApp(accountKey, true, "", notificationsEnabled,
@@ -115,7 +116,14 @@ class MainActivity : ComponentActivity() {
                     }
                 } else {
                     LoginScreen(authViewModel.state, ::signIn, ::signOut,
-                        onPreview = if (BuildConfig.DEBUG) ({ preview = true }) else null)
+                        onPreview = if (BuildConfig.DEBUG) ({ preview = true }) else null,
+                        onNavigate = authViewModel::navigate,
+                        onEmailSignIn = authViewModel::signInWithEmail,
+                        onSignUp = authViewModel::signUp,
+                        onResetPassword = authViewModel::resetPassword,
+                        onResendVerification = authViewModel::resendVerification,
+                        onCheckVerification = { authViewModel.checkVerification() },
+                        onContinueAfterSignup = authViewModel::continueAfterSignup)
                 }
             }
         }

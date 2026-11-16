@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer"><meta name="robots" content="noindex,nofollow">
+  <meta name="theme-color" content="#f4f6f2"><title>DOGS · 이메일 인증</title>
+  <link rel="icon" href="/paw.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="brand"><img src="/paw.svg" width="32" height="32" alt=""><span>DOGS</span><span class="tagline">함께 돌보는 우리 강아지</span></header>
+  <main>
+    <div class="eyebrow">함께하는 돌봄의 시작</div>
+    <section class="card" aria-labelledby="title" aria-busy="true" id="card">
+      <div id="symbol" class="symbol loading" aria-hidden="true"><span></span></div>
+      <div id="status" role="status" aria-live="polite" aria-atomic="true">
+        <p id="step" class="step">DOGS 계정 확인</p>
+        <h1 id="title">링크를 확인하고 있어요</h1>
+        <p id="description" class="description">잠시만 기다려 주세요.</p>
+      </div>
+      <form id="reset-form" hidden novalidate>
+        <label for="password">새 비밀번호</label>
+        <div class="password-wrap"><input id="password" type="password" autocomplete="new-password" maxlength="128" aria-describedby="password-help form-error"><button type="button" id="toggle-password" class="show" aria-label="새 비밀번호 표시" aria-pressed="false">보기</button></div>
+        <p class="field-help" id="password-help">8~128자 · 숫자와 특수문자 포함 · 공백 제외</p>
+        <label for="confirmation">새 비밀번호 확인</label>
+        <input id="confirmation" type="password" autocomplete="new-password" maxlength="128" aria-describedby="form-error">
+        <p id="form-error" class="error" role="alert"></p>
+        <button class="primary" id="reset-submit" type="submit">새 비밀번호 저장하기</button>
+      </form>
+      <button id="retry" class="primary" hidden>다시 시도하기</button>
+      <a id="open-app" class="primary" hidden>DOGS 앱 열기 <span aria-hidden="true">↗</span></a>
+      <div class="next" id="next" hidden><span class="next-label">다음 단계</span><p id="next-copy"></p></div>
+      <p id="device-help" class="device-help" hidden>다른 기기에서 메일을 열었나요?<br>DOGS를 실행한 기기에서 이어서 진행해 주세요.</p>
+    </section>
+    <p class="closing">작은 돌봄이 모여, 더 행복한 하루.</p>
+  </main>
+  <footer>가족과 함께 기록하는 반려견의 일상 <span>© DOGS</span></footer>
+  <noscript><p class="noscript">인증을 진행하려면 브라우저의 JavaScript를 켜 주세요.</p></noscript>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

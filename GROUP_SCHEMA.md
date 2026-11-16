@@ -77,7 +77,7 @@ Kotlin 모델은 `app/src/main/java/com/teamdogs/dogs/group/Models.kt`다. 필�
 
 ## 앱 연결 범위
 
-- Google 로그인은 Firebase Authentication을 사용한다. 실제 로그인 경로는 GroupApp → GroupViewModel(StateFlow) → GroupRepository다.
+- Google·이메일 로그인은 Firebase Authentication을 사용한다. 이메일 가입자는 인증을 완료한 뒤 그룹 초기 설정을 진행한다. 실제 로그인 경로는 GroupApp → GroupViewModel(StateFlow) → GroupRepository다.
 - 초기 설정은 실제 1인 그룹과 반려견/초기 ToDo를 생성한다.
 - 홈/할 일 탭의 추가·완료는 서버 저장이다. 그룹 공통 ToDo 추가도 가능하다. 수정·삭제 API와 요일별 반복 모델은 있으나 해당 편집 UI는 후속 작업이다.
 - 그룹 탭의 반려견 이름·견종·생일·체중 수정은 서버 저장이다. 사용자 프로필 수정 API는 있지만 전용 편집 화면은 후속 작업이다.

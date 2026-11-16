@@ -6,6 +6,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.teamdogs.dogs.auth.AuthUiState
 import com.teamdogs.dogs.auth.SignedInUser
 import com.teamdogs.dogs.ui.auth.LoginScreen
@@ -20,7 +21,7 @@ class LoginScreenTest {
     @Test fun signedOutUserCanStartGoogleSignIn() {
         var clicks = 0
         compose.setContent { DOGSTheme { LoginScreen(AuthUiState(), { clicks++ }, {}) } }
-        compose.onNodeWithText("Google로 로그인").performClick()
+        compose.onNodeWithText("Google로 로그인").performScrollTo().performClick()
         assertEquals(1, clicks)
     }
 
@@ -30,7 +31,7 @@ class LoginScreenTest {
             runCatching { compose.onAllNodesWithText("Google로 로그인").fetchSemanticsNodes().isNotEmpty() }.getOrDefault(false)
         }
         compose.onNodeWithText("Google로 로그인").assertIsNotEnabled()
-        compose.onNodeWithText("처리 중이에요…").assertIsDisplayed()
+        compose.onNodeWithText("처리 중이에요…").performScrollTo().assertIsDisplayed()
     }
 
     @Test fun authenticatedUserSeesProfileAndCanSignOut() {
@@ -48,8 +49,8 @@ class LoginScreenTest {
         compose.setContent {
             DOGSTheme { LoginScreen(AuthUiState(message = "다시 시도해 주세요."), { clicks++ }, {}) }
         }
-        compose.onNodeWithText("다시 시도해 주세요.").assertIsDisplayed()
-        compose.onNodeWithText("Google로 로그인").performClick()
+        compose.onNodeWithText("다시 시도해 주세요.").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Google로 로그인").performScrollTo().performClick()
         assertEquals(1, clicks)
     }
 }

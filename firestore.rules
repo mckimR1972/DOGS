@@ -1,7 +1,12 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
+    // Email/password accounts cannot access app data before mailbox verification.
+    function signedIn() {
+      return request.auth != null &&
+        (request.auth.token.firebase.sign_in_provider != 'password' ||
+         request.auth.token.get('email_verified', false) == true);
+    }
     function memberAfter(gid) {
       return signedIn() && existsAfter(/databases/$(database)/documents/groups/$(gid)/members/$(request.auth.uid));
     }
