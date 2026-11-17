@@ -1,0 +1,22 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function member(gid) {
+      return request.auth != null &&
+        (request.auth.token.firebase.sign_in_provider != 'password' || request.auth.token.get('email_verified', false) == true) &&
+        firestore.exists(/databases/(default)/documents/groups/$(gid)/members/$(request.auth.uid));
+    }
+    function photo(gid,pid) {
+      return firestore.get(/databases/(default)/documents/groups/$(gid)/photos/$(pid)).data;
+    }
+    match /groups/{gid}/photos/{pid}/{name} {
+      allow get: if member(gid) &&
+        ((name in ['image.jpg','thumb.jpg'] && photo(gid,pid).status == 'ready') ||
+         (name == 'upload.jpg' && photo(gid,pid).status == 'uploading' && photo(gid,pid).uploader_id == request.auth.uid));
+      allow create: if resource == null && member(gid) && name == 'upload.jpg' &&
+        photo(gid,pid).status == 'uploading' && photo(gid,pid).uploader_id == request.auth.uid &&
+        request.resource.size > 0 && request.resource.size <= 5 * 1024 * 1024 && request.resource.contentType == 'image/jpeg';
+      allow update, delete, list: if false;
+    }
+  }
+}

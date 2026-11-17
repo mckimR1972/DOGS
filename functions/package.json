@@ -1,0 +1,1 @@
+{"name":"dogs-photo-functions","private":true,"main":"index.js","engines":{"node":"22"},"scripts":{"test":"node --test test/*.test.js"},"dependencies":{"firebase-admin":"14.5.1","firebase-functions":"7.4.0","sharp":"0.35.5"},"devDependencies":{"firebase":"13.3.0"}}
