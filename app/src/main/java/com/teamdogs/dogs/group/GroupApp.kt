@@ -14,6 +14,10 @@ import com.google.firebase.firestore.FirebaseFirestoreException
 import com.teamdogs.dogs.auth.SignedInUser
 import com.teamdogs.dogs.prototype.*
 import com.teamdogs.dogs.photos.*
+import com.teamdogs.dogs.ui.components.*
+import com.teamdogs.dogs.ui.theme.DogsTheme
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -88,12 +92,19 @@ fun GroupApp(account: SignedInUser, notificationsEnabled: Boolean, onRequestNoti
     }
     val snapshot = ui.snapshot
     if (!ui.initialized) {
-        Scaffold { insets -> Column(Modifier.fillMaxSize().padding(insets).padding(24.dp),
+        Scaffold(containerColor = MaterialTheme.colorScheme.background) { insets -> Column(Modifier.fillMaxSize().padding(insets).padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically)) {
-            Text("DOGS", style = MaterialTheme.typography.headlineLarge)
-            if (ui.busy) { CircularProgressIndicator(); Text("우리 그룹 정보를 불러오고 있어요…") }
-            ui.error?.let { Text(it); Button(onClick = model::refresh) { Text("다시 시도") } }
-            TextButton(onClick = onExit) { Text("로그아웃") }
+            Text("dogs", style = MaterialTheme.typography.displaySmall)
+            RailMotif(Modifier.width(220.dp), filled = if (ui.busy) 2 else 0)
+            if (ui.busy) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                Text("우리 그룹 정보를 불러오고 있어요…", style = MaterialTheme.typography.bodyMedium)
+            }
+            ui.error?.let {
+                Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                PrimaryButton("다시 시도", model::refresh, Modifier.fillMaxWidth())
+            }
+            TextLink("로그아웃", onExit)
         } }
         return
     }
@@ -124,14 +135,16 @@ fun GroupApp(account: SignedInUser, notificationsEnabled: Boolean, onRequestNoti
             tasks = snapshot.todos.filter { it.isDue(LocalDate.parse(snapshot.day)) }.map { todo ->
                 val log = snapshot.logs.find { it.todo_id == todo.id }
                 CareTask(todo.id, todo.title, todo.due_at, todo.dog_id.orEmpty(),
-                    if (log == null) todo.note else "${if (log.done_by == account.uid) snapshot.user.name else log.done_by.take(6)} · 완료 기록됨", log != null)
+                    if (log == null) todo.note else "${if (log.done_by == account.uid) snapshot.user.name else "구성원 " + log.done_by.take(6)} 완료", log != null)
             }, photos = localPhotos.filter { photo -> snapshot.dogs.any { it.id == photo.petId } }, day = snapshot.day))
     }
     val photoModel = rememberPhotoModel(account.uid, snapshot.group.id)
     var editingDog by remember { mutableStateOf<Dog?>(null) }
     Column(Modifier.fillMaxSize()) {
-        if (ui.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-        ui.error?.let { Text(it, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.error) }
+        if (ui.busy) LinearProgressIndicator(Modifier.fillMaxWidth().statusBarsPadding(), color = MaterialTheme.colorScheme.primary,
+            trackColor = DogsTheme.colors.divider)
+        ui.error?.let { Banner(Modifier.statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp), icon = DogsIcons.Info) {
+            Text(it, style = MaterialTheme.typography.bodyMedium) } }
         PrototypeApp(accountKey, false, account.name, notificationsEnabled, onRequestNotifications, onTestNotification,
             onExit, controller, cloudGroup = snapshot, onToggleTask = model::toggle, onCreateTask = model::add,
             onRefresh = model::refresh, onEditDog = { id -> editingDog = snapshot.dogs.find { it.id == id } }, cloudBusy = ui.busy,
@@ -150,18 +163,19 @@ fun GroupApp(account: SignedInUser, notificationsEnabled: Boolean, onRequestNoti
     var birth by remember { mutableStateOf(dog.birth.orEmpty()) }
     var weight by remember { mutableStateOf(dog.weight?.toString().orEmpty()) }
     var error by remember { mutableStateOf(false) }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("반려견 정보") }, text = {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(name, { name = it.take(20) }, label = { Text("이름") })
-            OutlinedTextField(breed, { breed = it.take(60) }, label = { Text("견종 (선택)") })
-            OutlinedTextField(birth, { birth = it.take(10) }, label = { Text("생일 YYYY-MM-DD (선택)") })
-            OutlinedTextField(weight, { weight = it.take(8) }, label = { Text("체중 kg (선택)") })
-            if (error) Text("이름, 생일 또는 체중을 확인해 주세요.")
+    AlertDialog(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.background,
+        title = { Text("반려견 정보", style = MaterialTheme.typography.titleLarge) }, text = {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            DogsTextField("이름", name, { name = it.take(20) }, isError = error && name.isBlank())
+            DogsTextField("견종 (선택)", breed, { breed = it.take(60) })
+            DogsTextField("생일 (선택)", birth, { birth = it.take(10) }, placeholder = "2021-03-14")
+            DogsTextField("체중 kg (선택)", weight, { weight = it.take(8) }, placeholder = "3.2",
+                error = if (error) "이름, 생일(YYYY-MM-DD) 또는 체중(0~200)을 확인해 주세요." else null)
         }
-    }, confirmButton = { TextButton(onClick = {
+    }, confirmButton = { PrimaryButton("저장", {
         val parsedWeight = weight.toDoubleOrNull()
         val valid = name.isNotBlank() && (birth.isBlank() || runCatching { LocalDate.parse(birth) }.isSuccess) &&
             (weight.isBlank() || (parsedWeight != null && parsedWeight > 0 && parsedWeight <= 200))
         if (valid) onSave(dog.copy(name = name.trim(), breed = breed.trim(), birth = birth.ifBlank { null }, weight = parsedWeight)) else error = true
-    }) { Text("저장") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } })
+    }) }, dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } })
 }
