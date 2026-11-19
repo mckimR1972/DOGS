@@ -15,6 +15,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.firebase.Timestamp
 import com.teamdogs.dogs.auth.SignedInUser
+import com.teamdogs.dogs.ui.components.*
+import com.teamdogs.dogs.ui.theme.DogsTheme
+import androidx.compose.foundation.horizontalScroll
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -79,45 +82,55 @@ class CareHistoryViewModel(private val repository:GroupRepository, private val g
     var remove by remember{mutableStateOf<CareHistoryItem?>(null)}
     var chooseDay by remember{mutableStateOf(false)}
     val items=ui.items.filter{petId.isBlank() || it.dogId==petId}
-    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
-        Text(if(compact) "오늘 돌봄 기록" else "돌봄 기록",Modifier.weight(1f),style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.Bold)
-        if(!compact) TextButton(onClick={adding=true},enabled=!ui.saving){Text("+ 이미 한 일 기록")}
+    val zone=ZoneId.of(snapshot.group.timezone)
+    SectionHeader(if(compact) "오늘 돌봄 기록" else "돌봄 기록", count=items.size.takeIf{!ui.loading},
+        action=if(compact) null else "이미 한 일 기록", onAction=if(compact) null else ({adding=true}), actionEnabled=!ui.saving)
+    if(!compact) Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
+        IconButton(onClick={model.selectDay(LocalDate.parse(ui.day).minusDays(1).toString())}){Icon(DogsIcons.ChevronLeft,"이전 날짜")}
+        TextButton(onClick={chooseDay=true},modifier=Modifier.weight(1f)){
+            val d=LocalDate.parse(ui.day)
+            Text((if(ui.day==snapshot.group.today()) "오늘, " else "")+d.format(DateTimeFormatter.ofPattern("M월 d일 EEEE",java.util.Locale.KOREAN)),
+                style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSurface)
+        }
+        IconButton(onClick={model.selectDay(LocalDate.parse(ui.day).plusDays(1).toString())},enabled=ui.day<snapshot.group.today()){Icon(DogsIcons.ChevronRight,"다음 날짜")}
     }
-    if(!compact) Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween){
-        TextButton(onClick={model.selectDay(LocalDate.parse(ui.day).minusDays(1).toString())}){Text("‹ 이전")}
-        TextButton(onClick={chooseDay=true}){Text(if(ui.day==snapshot.group.today()) "오늘 · ${ui.day}" else ui.day)}
-        TextButton(onClick={model.selectDay(LocalDate.parse(ui.day).plusDays(1).toString())},enabled=ui.day<snapshot.group.today()){Text("다음 ›")}
-    }
-    if(ui.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-    ui.error?.let{Text(it,color=MaterialTheme.colorScheme.error);TextButton(onClick=model::refresh){Text("다시 불러오기")}}
-    if(!ui.loading && items.isEmpty())Text(if(compact)"아직 완료한 돌봄이 없어요." else "이 날짜에 남긴 돌봄 기록이 없어요.",color=MaterialTheme.colorScheme.onSurfaceVariant)
-    (if(compact)items.take(3) else items).forEach{item->
-        Card(colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface),modifier=Modifier.fillMaxWidth()){
-            Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
-                Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
-                    Text(item.title,Modifier.weight(1f),fontWeight=FontWeight.SemiBold)
-                    Text(item.performedAt.toDate().toInstant().atZone(ZoneId.of(snapshot.group.timezone)).format(DateTimeFormatter.ofPattern("HH:mm")),style=MaterialTheme.typography.labelMedium)
-                }
-                val actor=if(item.actor==account.uid) snapshot.user.name else "구성원 ${item.actor.take(6)}"
-                val dog=snapshot.dogs.find{it.id==item.dogId}?.name ?: if(item.dogId==null)"공통" else "반려견"
-                Text("$dog · $actor",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+    if(ui.loading) LinearProgressIndicator(Modifier.fillMaxWidth(),color=MaterialTheme.colorScheme.primary,trackColor=DogsTheme.colors.divider)
+    ui.error?.let{Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)){
+        Icon(DogsIcons.Info,null,Modifier.size(16.dp),tint=MaterialTheme.colorScheme.error)
+        Text(it,Modifier.weight(1f),color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)
+        TextLink("다시 불러오기",model::refresh)}}
+    if(!ui.loading && items.isEmpty())Text(if(compact)"아직 완료한 돌봄이 없어요." else "이 날짜에 남긴 돌봄 기록이 없어요.",
+        style=MaterialTheme.typography.bodyMedium,color=DogsTheme.colors.textTertiary)
+    Column{(if(compact)items.take(3) else items).forEachIndexed{i,item->
+        if(i>0) ListDivider()
+        val actor=if(item.actor==account.uid) snapshot.user.name else "구성원 ${item.actor.take(6)}"
+        val dog=snapshot.dogs.find{it.id==item.dogId}?.name ?: if(item.dogId==null)"공통" else "반려견"
+        Row(Modifier.fillMaxWidth().heightIn(min=60.dp).padding(vertical=6.dp),verticalAlignment=Alignment.CenterVertically,
+            horizontalArrangement=Arrangement.spacedBy(12.dp)){
+            PersonAvatar(actor,32.dp,highlighted=true)
+            Column(Modifier.weight(1f)){
+                Text(item.title,style=MaterialTheme.typography.bodyLarge,maxLines=2)
+                Text("$actor, $dog",style=MaterialTheme.typography.labelMedium,color=DogsTheme.colors.textTertiary,maxLines=1)
+            }
+            Column(horizontalAlignment=Alignment.End){
+                Text(item.performedAt.toDate().toInstant().atZone(zone).format(DateTimeFormatter.ofPattern("HH:mm")),
+                    style=MaterialTheme.typography.labelMedium,color=DogsTheme.colors.textTertiary)
                 if(!compact && (item.actor==account.uid || snapshot.group.leader_id==account.uid))
-                    TextButton(onClick={remove=item},enabled=!ui.saving,contentPadding=PaddingValues(0.dp)){
-                        Text(if(item.todoId==null)"기록 삭제" else "완료 취소")
-                    }
+                    TextLink(if(item.todoId==null)"기록 삭제" else "완료 취소",{remove=item},enabled=!ui.saving,
+                        color=MaterialTheme.colorScheme.error)
             }
         }
-    }
+    }}
     if(adding) CareRecordDialog(snapshot,account.uid,petId,ui.saving,ui.error,onDismiss={adding=false},onSave={record->
         model.save(record){adding=false;onChanged()}
     })
     remove?.let{item->AlertDialog(onDismissRequest={if(!ui.saving)remove=null},title={Text(if(item.todoId==null)"기록을 삭제할까요?" else "완료를 취소할까요?")},
         text={Column{Text("${item.title} 기록이 돌봄 기록에서 사라져요.");ui.error?.let{Text(it,color=MaterialTheme.colorScheme.error)}}},
-        confirmButton={TextButton(onClick={model.remove(item){remove=null;onChanged()}},enabled=!ui.saving){Text("확인")}},
+        confirmButton={TextButton(onClick={model.remove(item){remove=null;onChanged()}},enabled=!ui.saving,colors=ButtonDefaults.textButtonColors(contentColor=MaterialTheme.colorScheme.error)){Text("확인")}},
         dismissButton={TextButton(onClick={remove=null},enabled=!ui.saving){Text("취소")}})}
     if(chooseDay){var day by remember{mutableStateOf(ui.day)};var invalid by remember{mutableStateOf(false)}
         AlertDialog(onDismissRequest={chooseDay=false},title={Text("돌봄 기록 날짜")},text={Column{
-            OutlinedTextField(day,{day=it.take(10)},label={Text("날짜 YYYY-MM-DD")},singleLine=true)
+            OutlinedTextField(day,{day=it.take(10)},label={Text("날짜 YYYY-MM-DD")},singleLine=true,shape=MaterialTheme.shapes.medium)
             if(invalid)Text("오늘 또는 이전 날짜를 입력해 주세요.")
         }},confirmButton={TextButton(onClick={val parsed=runCatching{LocalDate.parse(day)}.getOrNull()
             if(parsed==null || parsed.year<1 || parsed>LocalDate.parse(snapshot.group.today()))invalid=true else{model.selectDay(day);chooseDay=false}}){Text("보기")}},
@@ -132,17 +145,19 @@ class CareHistoryViewModel(private val repository:GroupRepository, private val g
     var day by rememberSaveable{mutableStateOf(now.toLocalDate().toString())}
     var time by rememberSaveable{mutableStateOf(now.format(DateTimeFormatter.ofPattern("HH:mm")))}
     var error by remember{mutableStateOf<String?>(null)}
-    AlertDialog(onDismissRequest={if(!saving)onDismiss()},containerColor=MaterialTheme.colorScheme.surface,title={Text("이미 한 일 기록")},text={
+    AlertDialog(onDismissRequest={if(!saving)onDismiss()},containerColor=MaterialTheme.colorScheme.background,title={Text("이미 한 일 기록")},text={
         Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)){
             Text("실제로 돌본 시각을 남겨 주세요. 기본값은 지금이에요.",style=MaterialTheme.typography.bodySmall)
-            OutlinedTextField(title,{title=it.take(100)},label={Text("어떤 돌봄을 했나요?")},singleLine=true,enabled=!saving)
-            OutlinedTextField(day,{day=it.take(10)},label={Text("한 날짜 YYYY-MM-DD")},singleLine=true,enabled=!saving)
-            OutlinedTextField(time,{time=it.take(5)},label={Text("한 시각 HH:mm")},singleLine=true,enabled=!saving)
-            Row(verticalAlignment=Alignment.CenterVertically){RadioButton(dog.isBlank(),{dog=""},enabled=!saving);Text("공통")}
-            group.dogs.forEach{d->Row(verticalAlignment=Alignment.CenterVertically){RadioButton(dog==d.id,{dog=d.id},enabled=!saving);Text(d.name)}}
+            OutlinedTextField(title,{title=it.take(100)},label={Text("어떤 돌봄을 했나요?")},singleLine=true,shape=MaterialTheme.shapes.medium,enabled=!saving)
+            OutlinedTextField(day,{day=it.take(10)},label={Text("한 날짜 YYYY-MM-DD")},singleLine=true,shape=MaterialTheme.shapes.medium,enabled=!saving)
+            OutlinedTextField(time,{time=it.take(5)},label={Text("한 시각 HH:mm")},singleLine=true,shape=MaterialTheme.shapes.medium,enabled=!saving)
+            Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                DogChip("공통",dog.isBlank(),{if(!saving)dog=""})
+                group.dogs.forEach{d->DogChip(d.name,dog==d.id,{if(!saving)dog=d.id},dogId=d.id)}
+            }
             (error ?: serverError)?.let{Text(it,color=MaterialTheme.colorScheme.error)}
         }
-    },confirmButton={Button(enabled=!saving,onClick={
+    },confirmButton={Button(enabled=!saving,shape=androidx.compose.foundation.shape.CircleShape,onClick={
         val instant=runCatching{LocalDate.parse(day).also { require(it.year in 1..9999) }.atTime(LocalTime.parse(time)).atZone(ZoneId.of(group.group.timezone)).toInstant()}.getOrNull()
         if(title.isBlank() || instant==null || instant>Instant.now())error="내용과 실제로 한 날짜·시각을 확인해 주세요. 미래 시각은 기록할 수 없어요."
         else{error=null;onSave(CareRecord(id,group.group.id,title.trim(),dog.ifBlank{null},uid,Timestamp(Date.from(instant))))}
